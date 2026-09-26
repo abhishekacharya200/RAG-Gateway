@@ -1,0 +1,13 @@
+fastapi>=0.110
+uvicorn>=0.29
+pydantic>=2.5
+python-multipart>=0.0.9   # Files API uploads
+pypdf>=4.0                # text of PDFs for CLIs that cannot read them
+# Local tokenizers for the OpenAI and Gemini token-count endpoints.
+tiktoken>=0.7
+sentencepiece>=0.2
+protobuf>=4.25
+# The official SDKs: used by rag_app.py, the live checks, the tests, and your apps.
+anthropic>=0.40
+openai>=1.60
+google-genai>=1.20

@@ -1,0 +1,834 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RAG Gateway</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1' y='2' width='4' height='12' rx='1' fill='%23b4532a'/%3E%3Crect x='6' y='2' width='4' height='12' rx='1' fill='%230f7a5c'/%3E%3Crect x='11' y='2' width='4' height='12' rx='1' fill='%232f5fd0'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:wght@400;500&family=Atkinson+Hyperlegible+Next:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root {
+  --paper: #eef2f6;
+  --surface: #ffffff;
+  --ink: #16212e;
+  --muted: #566476;
+  --line: #d3dbe5;
+  --red: #b42318;
+  --amber: #a15f0f;
+  --good: #1d7a4a;
+  /* One colour per provider. It marks every answer that provider gave. */
+  --claude: #b4532a;
+  --codex: #0f7a5c;
+  --antigravity: #2f5fd0;
+  --accent: var(--claude);
+  --sans: "Atkinson Hyperlegible Next", "Segoe UI", system-ui, sans-serif;
+  --mono: "Atkinson Hyperlegible Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #131b25;
+    --surface: #1b2532;
+    --ink: #e2e8ef;
+    --muted: #9aa8b8;
+    --line: #2d3b4c;
+    --red: #f2887b;
+    --amber: #e3a653;
+    --good: #6fcf97;
+    --claude: #e38a62;
+    --codex: #4cc39e;
+    --antigravity: #86a6f5;
+    color-scheme: dark;
+  }
+}
+body[data-provider="codex"] { --accent: var(--codex); }
+body[data-provider="antigravity"] { --accent: var(--antigravity); }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.55 var(--sans); -webkit-font-smoothing: antialiased; }
+.page { max-width: 70rem; margin: 0 auto; padding: 2.5rem 1.25rem 5rem; }
+a { color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+button, input, select, textarea { font: inherit; color: inherit; }
+code { font-family: var(--mono); font-size: .92em; }
+
+/* ---------- header ---------- */
+h1 { margin: 0; font-size: 1.75rem; line-height: 1.2; font-weight: 700; letter-spacing: -.01em; }
+.lead { margin: .35rem 0 0; color: var(--muted); max-width: 46rem; }
+.connect { margin: 1.1rem 0 0; display: grid; grid-template-columns: max-content max-content; gap: .3rem 1rem; font-size: .9rem; color: var(--muted); }
+.connect code { color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: .05rem .35rem; user-select: all; }
+
+/* ---------- provider picker, which is also the status ---------- */
+.providers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; margin: 2rem 0 1.25rem; }
+.provider {
+  text-align: left; background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+  padding: .85rem 1rem .9rem; cursor: pointer; display: grid; gap: .2rem; align-content: start; border-top: 4px solid var(--c);
+}
+.provider[aria-pressed="true"] { border-color: var(--c); box-shadow: 0 0 0 1px var(--c) inset; }
+.provider:disabled { cursor: default; opacity: .7; }
+.provider .name { font-weight: 700; font-size: 1.0625rem; }
+.provider .vendor { color: var(--muted); font-size: .875rem; }
+.provider .state { font-size: .85rem; margin-top: .3rem; }
+.provider .state.ok { color: var(--good); }
+.provider .state.bad { color: var(--red); }
+.meter { height: 5px; border-radius: 3px; background: var(--line); overflow: hidden; margin-top: .15rem; }
+.meter span { display: block; height: 100%; background: var(--good); }
+.meter.warn span { background: var(--amber); }
+.usage { font-size: .8rem; color: var(--muted); display: grid; gap: .15rem; margin-top: .35rem; }
+
+/* ---------- composer ---------- */
+.composer { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 1.25rem; }
+.composer label.main { display: block; font-weight: 600; margin-bottom: .5rem; }
+textarea { width: 100%; resize: vertical; border: 1px solid var(--line); border-radius: 8px; padding: .7rem .8rem; background: var(--paper); line-height: 1.5; }
+#question { min-height: 5rem; font-size: 1.0625rem; }
+.extras { display: flex; flex-wrap: wrap; gap: .5rem 1.5rem; margin: .75rem 0 0; }
+.extras details { flex: 1 1 100%; }
+.extras summary, .preview summary, .raw summary, .ctx summary { cursor: pointer; color: var(--accent); width: max-content; }
+.extras details[open] summary { margin-bottom: .5rem; }
+.extras textarea { min-height: 6.5rem; font-size: .95rem; }
+.hint { font-size: .85rem; color: var(--muted); margin: .35rem 0 0; }
+.controls { display: flex; flex-wrap: wrap; align-items: end; gap: .9rem 1.25rem; margin-top: 1rem; }
+.field { display: grid; gap: .25rem; font-size: .875rem; color: var(--muted); }
+.field select, .field input[type=number] { padding: .45rem .6rem; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); min-width: 0; max-width: 100%; }
+.field input[type=number] { width: 7rem; }
+.check { display: flex; align-items: center; gap: .45rem; font-size: .9rem; padding-bottom: .45rem; }
+.spacer { flex: 1; }
+.primary { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: .65rem 1.3rem; font-weight: 600; cursor: pointer; }
+@media (prefers-color-scheme: dark) { .primary { color: #10161f; } }
+.primary:disabled { opacity: .55; cursor: default; }
+.secondary { background: none; border: 1px solid var(--line); border-radius: 8px; padding: .6rem 1.1rem; cursor: pointer; }
+.preview { margin-top: 1rem; font-size: .875rem; }
+.preview .endpoint { margin: .6rem 0 .35rem; font-family: var(--mono); font-size: .8125rem; overflow-wrap: anywhere; }
+
+/* ---------- questions and answers ---------- */
+.ledger-head { display: flex; flex-wrap: wrap; gap: .75rem 1.5rem; justify-content: space-between; align-items: baseline; margin: 3rem 0 .5rem; }
+.ledger-head h2 { margin: 0; font-size: 1.1875rem; }
+.filters { display: flex; flex-wrap: wrap; gap: .4rem; }
+.filters button { background: none; border: 1px solid var(--line); border-radius: 999px; padding: .2rem .75rem; font-size: .85rem; cursor: pointer; color: var(--muted); }
+.filters button[aria-pressed="true"] { color: var(--ink); border-color: var(--ink); }
+.filters button span::before { content: ""; display: inline-block; width: .55rem; height: .55rem; border-radius: 50%; margin-right: .4rem; background: var(--c, transparent); vertical-align: 0; }
+.entry { display: grid; grid-template-columns: minmax(0, 17rem) minmax(0, 1fr); gap: .75rem 2.5rem; padding: 1.75rem 0; border-top: 1px solid var(--line); }
+.entry .q { border-left: 4px solid var(--c); padding-left: .9rem; align-self: start; }
+.who { font-size: .8125rem; font-weight: 700; color: var(--c); margin: 0 0 .35rem; }
+.q-text { margin: 0; font-weight: 600; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 14rem; overflow: auto; }
+.meta { margin: .6rem 0 0; font-size: .8125rem; color: var(--muted); display: grid; gap: .1rem; }
+.meta .cached { color: var(--good); }
+.ctx { margin-top: .5rem; font-size: .8125rem; color: var(--muted); }
+.ctx p { margin: .35rem 0 0; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 12rem; overflow: auto; }
+.a { min-width: 0; }
+.prose { font-size: 1.0625rem; line-height: 1.65; max-width: 42rem; overflow-wrap: anywhere; }
+.prose > :first-child { margin-top: 0; }
+.prose p, .prose ul, .prose ol, .prose pre { margin: 0 0 .85rem; }
+.prose h3 { margin: 1.1rem 0 .4rem; font-size: 1.0625rem; }
+.prose ul, .prose ol { padding-left: 1.3rem; }
+.prose li { margin: .2rem 0; }
+.prose pre, .json { font-family: var(--mono); font-size: .8125rem; line-height: 1.5; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: .8rem .9rem; overflow: auto; }
+.json { max-height: 26rem; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.prose :not(pre) > code { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 0 .25rem; }
+.error { color: var(--red); margin: 0; max-width: 42rem; overflow-wrap: anywhere; }
+.caret { display: inline-block; width: .5em; height: 1.1em; vertical-align: -3px; background: var(--c, var(--accent)); margin-left: 2px; animation: blink 1s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .caret { animation: none; } }
+.raw { margin-top: .9rem; font-size: .875rem; }
+.raw h4 { margin: .9rem 0 .35rem; font-size: .875rem; }
+.empty { padding: 2rem 0; border-top: 1px solid var(--line); color: var(--muted); }
+.chips { list-style: none; padding: 0; margin: .6rem 0 0; display: grid; gap: .4rem; }
+.chip { display: flex; flex-wrap: wrap; align-items: baseline; gap: .2rem .75rem; background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: .45rem .7rem; font-size: .85rem; }
+.chip strong { font-weight: 600; }
+.chip code, .file-row code { font-size: .78rem; color: var(--muted); overflow-wrap: anywhere; }
+.chip .linkish { margin-left: auto; }
+#files-box input[type=file] { font-size: .9rem; max-width: 100%; }
+#tools { font-family: var(--mono); font-size: .8125rem; min-height: 8rem; }
+.linkish { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; font: inherit; }
+.toolcall { margin: .6rem 0 0; border: 1px dashed var(--c, var(--accent)); border-radius: 8px; padding: .55rem .75rem; font-size: .9rem; max-width: 42rem; }
+.toolcall code { font-family: var(--mono); font-size: .8125rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.toolcall .note { display: block; color: var(--muted); font-size: .8rem; margin-top: .3rem; }
+.files-panel { margin: 1.25rem 0 0; font-size: .9rem; }
+.files-panel summary { cursor: pointer; color: var(--accent); width: max-content; }
+.file-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .15rem 1rem; padding: .65rem 0; border-top: 1px solid var(--line); }
+.file-row .ids { display: grid; gap: .1rem; }
+.attach-list { margin: .45rem 0 0; font-size: .8125rem; color: var(--muted); overflow-wrap: anywhere; }
+
+@media (max-width: 760px) {
+  .page { padding: 1.75rem 1rem 4rem; }
+  .providers { grid-template-columns: minmax(0, 1fr); }
+  .entry { grid-template-columns: minmax(0, 1fr); }
+  .controls .spacer { display: none; }
+  .connect { grid-template-columns: minmax(0, 1fr); }
+}
+</style>
+</head>
+<body data-provider="claude">
+<main class="page">
+  <header>
+    <h1>RAG Gateway</h1>
+    <p class="lead">The Anthropic, OpenAI and Gemini APIs on this computer, answered through your Claude Code, Codex and Antigravity logins instead of API keys.</p>
+    <div class="connect" id="connect"></div>
+  </header>
+
+  <section class="providers" id="providers" aria-label="Choose who answers"></section>
+
+  <form class="composer" id="ask-form">
+    <label class="main" for="question">Ask a question</label>
+    <textarea id="question" placeholder="Ask what your RAG app would ask" required></textarea>
+    <div class="extras">
+      <details id="context-box">
+        <summary>Add context</summary>
+        <textarea id="context" placeholder="Paste the passages your retriever would return"></textarea>
+        <p class="hint">Sent as a context block followed by a question block, the way a RAG app sends it.</p>
+      </details>
+      <details id="system-box">
+        <summary>Add a system prompt</summary>
+        <textarea id="system" placeholder="For example: Answer only from the context. If the context is not enough, say so."></textarea>
+      </details>
+      <details id="files-box">
+        <summary>Attach files</summary>
+        <input id="file-input" type="file" multiple
+               accept="image/png,image/jpeg,image/gif,image/webp,application/pdf,text/*,.md,.csv,.json,.txt,.yaml,.yml">
+        <p class="hint">Each file is uploaded through the Files API of the format you picked, and the request refers to it by its id. Images, PDFs and text files, up to 32 MB each.</p>
+        <ul class="chips" id="attached"></ul>
+        <p class="error" id="files-error" hidden></p>
+      </details>
+      <details id="tools-box">
+        <summary>Add tools</summary>
+        <textarea id="tools" spellcheck="false" placeholder='[{"name": "get_weather", "description": "...", "parameters": {...}}]'></textarea>
+        <p class="hint">Functions as a JSON list, each with a name, a description and parameters (JSON Schema). When the model calls one, the call is shown with the answer; a real app would run it and send the result back. <button type="button" class="linkish" id="tools-example">Use an example</button></p>
+        <p class="error" id="tools-error" hidden></p>
+      </details>
+    </div>
+    <div class="controls">
+      <label class="field">API format
+        <select id="api"></select>
+      </label>
+      <label class="field">Model
+        <select id="model"></select>
+      </label>
+      <label class="field">Max tokens
+        <input id="max-tokens" type="number" min="1" max="64000" value="1024">
+      </label>
+      <label class="check"><input id="use-cache" type="checkbox" checked> Reuse saved answers</label>
+      <span class="spacer"></span>
+      <button class="secondary" id="stop" type="button" hidden>Stop</button>
+      <button class="primary" id="ask" type="submit">Ask</button>
+    </div>
+    <details class="preview" id="preview">
+      <summary>Show the request that will be sent</summary>
+      <p class="endpoint" id="preview-endpoint"></p>
+      <pre class="json" id="preview-body"></pre>
+    </details>
+  </form>
+
+  <details class="files-panel" id="files-panel">
+    <summary>Uploaded files <span id="files-count"></span></summary>
+    <div id="files-list"></div>
+  </details>
+
+  <div class="ledger-head">
+    <h2>Questions and answers</h2>
+    <div class="filters" id="filters" aria-label="Show answers from"></div>
+  </div>
+  <section id="ledger"></section>
+</main>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const store = {
+  get(k, d) { try { return localStorage.getItem(k) ?? d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+};
+// Filled in by the gateway when it serves this page (only to this computer), so nobody has to type it.
+const apiKey = __GATEWAY_KEY__;
+
+let providers = [];            // from /ui/api/status
+let apiLabels = {};            // api id -> label
+let current = store.get("gateway-provider", "claude");
+let filter = "";
+let controller = null;
+const shown = new Map();       // history id -> element
+
+// ---------- the four API formats: how to build a request and read a stream ----------
+
+const textBlocks = (context, question, type) =>
+  context ? [{ type, text: `Context:\n${context}` }, { type, text: `Question:\n${question}` }] : [{ type, text: question }];
+
+const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+const isImage = (f) => IMAGE_TYPES.includes(f.type);
+// How each format refers to an uploaded file (the gateway stores one copy; each format has its own id style).
+const FILE_REFS = {
+  "anthropic-messages": (f) => ({ type: isImage(f) ? "image" : "document", source: { type: "file", file_id: `file_011${f.core}` } }),
+  // Chat Completions takes images as URLs, so images go inline as data URLs; other files by id.
+  "openai-chat": (f) => isImage(f) ? { type: "image_url", image_url: { url: f.dataUrl } } : { type: "file", file: { file_id: `file-${f.core}` } },
+  "openai-responses": (f) => ({ type: isImage(f) ? "input_image" : "input_file", file_id: `file-${f.core}` }),
+  gemini: (f) => ({ fileData: { fileUri: `${location.origin}/v1beta/files/${f.core}`, mimeType: f.type } }),
+};
+const FILE_IDS = {
+  "anthropic-messages": (core) => `file_011${core}`, "openai-chat": (core) => `file-${core}`,
+  "openai-responses": (core) => `file-${core}`, gemini: (core) => `files/${core}`,
+};
+
+const APIS = {
+  "anthropic-messages": {
+    url: () => "/v1/messages",
+    headers: () => ({ "x-api-key": apiKey }),
+    body: ({ model, maxTokens, system, question, context, files, tools }) => ({
+      model, max_tokens: maxTokens, ...(system ? { system } : {}),
+      messages: [{ role: "user", content: files.length || context
+        ? [...files.map(FILE_REFS["anthropic-messages"]), ...textBlocks(context, question, "text")] : question }],
+      ...(tools ? { tools: tools.map((t) => ({ name: t.name, description: t.description || "",
+                                                input_schema: t.parameters || { type: "object", properties: {} } })) } : {}),
+      stream: true,
+    }),
+    read(data) {
+      if (data.type === "content_block_delta" && data.delta.type === "text_delta") return { text: data.delta.text };
+      if (data.type === "content_block_start" && data.content_block.type === "tool_use") return { toolStart: data.content_block.name };
+      if (data.type === "content_block_delta" && data.delta.type === "input_json_delta") return { toolArgs: data.delta.partial_json };
+      if (data.type === "error") return { error: data.error.message };
+    },
+  },
+  "openai-chat": {
+    url: () => "/v1/chat/completions",
+    headers: () => ({ authorization: `Bearer ${apiKey}` }),
+    body: ({ model, maxTokens, system, question, context, files, tools }) => ({
+      model, max_completion_tokens: maxTokens,
+      messages: [...(system ? [{ role: "system", content: system }] : []),
+                 { role: "user", content: files.length || context
+                   ? [...files.map(FILE_REFS["openai-chat"]), ...textBlocks(context, question, "text")] : question }],
+      ...(tools ? { tools: tools.map((t) => ({ type: "function", function: t })) } : {}),
+      stream: true, stream_options: { include_usage: true },
+    }),
+    read(data) {
+      if (data.error) return { error: data.error.message };
+      const delta = data.choices?.[0]?.delta || {};
+      const call = delta.tool_calls?.[0];
+      if (call) return { toolStart: call.function?.name, toolArgs: call.function?.arguments };
+      if (delta.content) return { text: delta.content };
+    },
+  },
+  "openai-responses": {
+    url: () => "/v1/responses",
+    headers: () => ({ authorization: `Bearer ${apiKey}` }),
+    body: ({ model, maxTokens, system, question, context, files, tools }) => ({
+      model, max_output_tokens: maxTokens, ...(system ? { instructions: system } : {}),
+      input: files.length || context
+        ? [{ role: "user", content: [...files.map(FILE_REFS["openai-responses"]), ...textBlocks(context, question, "input_text")] }]
+        : question,
+      ...(tools ? { tools: tools.map((t) => ({ type: "function", ...t })) } : {}),
+      stream: true,
+    }),
+    read(data) {
+      if (data.type === "response.output_text.delta") return { text: data.delta };
+      if (data.type === "response.output_item.added" && data.item.type === "function_call") return { toolStart: data.item.name };
+      if (data.type === "response.function_call_arguments.delta") return { toolArgs: data.delta };
+      if (data.type === "error") return { error: data.message };
+    },
+  },
+  gemini: {
+    url: (model) => `/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`,
+    headers: () => ({ "x-goog-api-key": apiKey }),
+    body: ({ maxTokens, system, question, context, files, tools }) => ({
+      ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
+      contents: [{ role: "user", parts: [...files.map(FILE_REFS.gemini),
+                                         ...textBlocks(context, question, "text").map((b) => ({ text: b.text }))] }],
+      ...(tools ? { tools: [{ functionDeclarations: tools.map((t) => ({ name: t.name, description: t.description || "",
+                                                                        parametersJsonSchema: t.parameters })) }] } : {}),
+      generationConfig: { maxOutputTokens: maxTokens },
+    }),
+    read(data) {
+      if (data.error) return { error: data.error.message };
+      const parts = data.candidates?.[0]?.content?.parts || [];
+      const call = parts.find((p) => p.functionCall)?.functionCall;
+      const text = parts.map((p) => p.text || "").join("");
+      return { text, ...(call ? { toolStart: call.name, toolArgs: JSON.stringify(call.args || {}) } : {}) };
+    },
+  },
+};
+
+// ---------- files and tools in the composer ----------
+
+let attached = [];  // {name, type, size, core, path, dataUrl, status}
+
+const TOOL_EXAMPLE = [{
+  name: "get_weather",
+  description: "Get the current weather for a city.",
+  parameters: { type: "object", properties: { city: { type: "string", description: "City name" } }, required: ["city"] },
+}];
+
+function readTools() {
+  const raw = $("#tools").value.trim();
+  $("#tools-error").hidden = true;
+  if (!raw) return null;
+  let tools;
+  try { tools = JSON.parse(raw); } catch { throw new Error("Tools: this is not valid JSON."); }
+  if (!Array.isArray(tools) || !tools.every((t) => t && typeof t.name === "string" && t.name)) {
+    throw new Error("Tools: give a JSON list of objects, each with a name.");
+  }
+  return tools.length ? tools : null;
+}
+
+async function uploadFile(file, apiId) {
+  if (apiId === "gemini") {
+    // Google's resumable upload: a start call returns an upload URL, then the bytes go there.
+    const start = await fetch("/upload/v1beta/files", { method: "POST", body: JSON.stringify({ file: { display_name: file.name } }),
+      headers: { "x-goog-api-key": apiKey, "x-goog-upload-protocol": "resumable", "x-goog-upload-command": "start",
+                 "x-goog-upload-header-content-type": file.type || "application/octet-stream", "content-type": "application/json" } });
+    if (!start.ok) throw new Error((await start.json().catch(() => null))?.error?.message || `HTTP ${start.status}`);
+    const done = await fetch(start.headers.get("x-goog-upload-url"), { method: "POST", body: file,
+      headers: { "x-goog-upload-command": "upload, finalize", "x-goog-upload-offset": "0" } });
+    const body = await done.json().catch(() => null);
+    if (!done.ok) throw new Error(body?.error?.message || `HTTP ${done.status}`);
+    return { core: body.file.name.split("/")[1], path: body.file.path };
+  }
+  const form = new FormData();
+  form.append("file", file);
+  const anthropic = apiId === "anthropic-messages";
+  if (!anthropic) form.append("purpose", "user_data");
+  const r = await fetch("/v1/files", { method: "POST", body: form, headers: anthropic
+    ? { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "anthropic-beta": "files-api-2025-04-14" }
+    : { authorization: `Bearer ${apiKey}` } });
+  const body = await r.json().catch(() => null);
+  if (!r.ok) throw new Error(body?.error?.message || `HTTP ${r.status}`);
+  return { core: body.id.replace(/^file_011|^file-/, ""), path: body.path };
+}
+
+const dataUrlOf = (file) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(reader.result);
+  reader.onerror = () => reject(reader.error);
+  reader.readAsDataURL(file);
+});
+
+function size(n) {
+  return n < 1024 ? `${n} bytes` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`;
+}
+
+function renderAttached() {
+  const apiId = $("#api").value;
+  $("#files-error").hidden = true;
+  $("#attached").innerHTML = attached.map((f, i) => `<li class="chip">
+      <strong>${esc(f.name)}</strong><span>${esc(f.type || "unknown type")}, ${size(f.size)}</span>
+      ${f.status ? `<span class="${f.error ? "error" : ""}">${esc(f.status)}</span>`
+                 : `<code>${esc((FILE_IDS[apiId] || FILE_IDS["openai-chat"])(f.core))}</code><code>${esc(f.path || "")}</code>`}
+      <button type="button" class="linkish" data-remove="${i}">Remove</button></li>`).join("");
+  document.querySelectorAll("[data-remove]").forEach((b) => b.addEventListener("click", () => {
+    attached.splice(Number(b.dataset.remove), 1);
+    renderAttached();
+    updatePreview();
+  }));
+}
+
+$("#file-input").addEventListener("change", async (e) => {
+  const apiId = $("#api").value;
+  for (const file of [...e.target.files]) {
+    const entry = { name: file.name, type: file.type || "application/octet-stream", size: file.size, status: "Uploading…" };
+    attached.push(entry);
+    renderAttached();
+    try {
+      Object.assign(entry, await uploadFile(file, apiId));
+      if (isImage(entry)) entry.dataUrl = await dataUrlOf(file);
+      entry.status = "";
+    } catch (err) {
+      entry.status = `Not uploaded: ${err.message}`;
+      entry.error = true;
+    }
+    renderAttached();
+    updatePreview();
+  }
+  e.target.value = "";
+  refreshFiles();
+});
+
+$("#tools-example").addEventListener("click", () => {
+  $("#tools").value = JSON.stringify(TOOL_EXAMPLE, null, 2);
+  updatePreview();
+});
+
+async function refreshFiles() {
+  try {
+    const { files } = await getJSON("/ui/api/files");
+    $("#files-count").textContent = `(${files.length})`;
+    $("#files-list").innerHTML = files.length ? files.map((f) => `<div class="file-row">
+        <div><strong>${esc(f.filename)}</strong> <span>${esc(f.media_type)}, ${size(f.size)}, ${when(f.created_at)}</span>
+          <div class="ids"><code>${esc(f.path)}</code><code>OpenAI ${esc(f.openai_id)}</code>
+          <code>Anthropic ${esc(f.anthropic_id)}</code><code>Gemini ${esc(f.gemini_name)}</code></div></div>
+        <button type="button" class="linkish" data-delete="${esc(f.id)}">Delete</button></div>`).join("")
+      : `<p class="hint">No files yet. Attach one above, or upload with any SDK's Files API.</p>`;
+    document.querySelectorAll("[data-delete]").forEach((b) => b.addEventListener("click", async () => {
+      await getJSON(`/ui/api/files/${b.dataset.delete}`, { method: "DELETE" });
+      attached = attached.filter((f) => f.core !== b.dataset.delete);
+      renderAttached();
+      updatePreview();
+      refreshFiles();
+    }));
+  } catch (err) {
+    $("#files-list").innerHTML = `<p class="error">${esc(err.message)}</p>`;
+  }
+}
+
+function toolBox(name, args) {
+  let shown = args || "";
+  try { shown = JSON.stringify(JSON.parse(args || "{}"), null, 1); } catch {}
+  return `<div class="toolcall"><strong>Tool call</strong> <code>${esc(name)}(${esc(shown)})</code>
+    <span class="note">A real app runs this tool and sends the result back in the next request.</span></div>`;
+}
+
+// The stored answer lists tool calls as "[tool call] name({...})" lines after the text.
+function answerHTML(answer) {
+  const parts = (answer || "").split("\n\n");
+  const calls = parts.filter((p) => p.startsWith("[tool call] ")).map((p) => p.slice(12));
+  const text = parts.filter((p) => !p.startsWith("[tool call] ")).join("\n\n");
+  return (text ? `<div class="prose">${markdown(text)}</div>` : "") + calls.map((c) => {
+    const open = c.indexOf("(");
+    return toolBox(c.slice(0, open), c.slice(open + 1, -1));
+  }).join("");
+}
+
+// ---------- helpers ----------
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+// Small Markdown renderer for answers: code blocks, inline code, bold, italics, headings, lists, links.
+function markdown(src) {
+  const blocks = [];
+  const text = esc(src).replace(/```[\w-]*\n?([\s\S]*?)```/g, (_, code) => {
+    blocks.push(`<pre><code>${code.replace(/\n$/, "")}</code></pre>`);
+    return `\u0000${blocks.length - 1}\u0000`;
+  });
+  const inline = (s) => s
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/(^|[^*])\*([^*\s][^*]*)\*/g, "$1<em>$2</em>")
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  const out = [];
+  for (const para of text.split(/\n{2,}/)) {
+    const lines = para.split("\n");
+    if (/^\u0000\d+\u0000$/.test(para.trim())) { out.push(para.trim()); continue; }
+    if (lines.every((l) => /^\s*[-*] /.test(l))) {
+      out.push("<ul>" + lines.map((l) => `<li>${inline(l.replace(/^\s*[-*] /, ""))}</li>`).join("") + "</ul>");
+    } else if (lines.every((l) => /^\s*\d+[.)] /.test(l))) {
+      // Items separated by blank lines arrive as separate lists, so keep their numbers.
+      out.push(`<ol start="${parseInt(lines[0], 10)}">` + lines.map((l) => `<li>${inline(l.replace(/^\s*\d+[.)] /, ""))}</li>`).join("") + "</ol>");
+    } else if (/^#{1,6} /.test(para)) {
+      const [head, ...rest] = lines;
+      out.push(`<h3>${inline(head.replace(/^#+ /, ""))}</h3>`);
+      if (rest.length) out.push(`<p>${inline(rest.join("<br>"))}</p>`);
+    } else {
+      out.push(`<p>${inline(lines.join("<br>"))}</p>`);
+    }
+  }
+  return out.join("").replace(/\u0000(\d+)\u0000/g, (_, i) => blocks[i]);
+}
+
+function when(ts) {
+  const d = new Date(ts * 1000);
+  const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return d.toDateString() === new Date().toDateString() ? time : `${d.toLocaleDateString()} ${time}`;
+}
+
+async function getJSON(path, opts = {}) {
+  const r = await fetch(path, { ...opts, headers: { "x-api-key": apiKey, ...(opts.headers || {}) } });
+  const body = await r.json().catch(() => null);
+  if (!r.ok) throw new Error(body?.error?.message || `HTTP ${r.status}`);
+  return body;
+}
+
+const providerById = (id) => providers.find((p) => p.id === id);
+const colour = (id) => `var(--${id in { claude: 1, codex: 1, antigravity: 1 } ? id : "muted"})`;
+
+// ---------- providers and the composer ----------
+
+function meter(label, window) {
+  if (!window || typeof window.utilization !== "number") return "";
+  const pct = Math.round(window.utilization * 100);
+  return `<span>${label}: ${pct}% used</span><div class="meter ${pct >= 75 ? "warn" : ""}" role="img" aria-label="${label} ${pct}% used"><span style="width:${Math.min(pct, 100)}%"></span></div>`;
+}
+
+function renderProviders() {
+  $("#providers").innerHTML = providers.map((p) => {
+    const windows = p.rate_limit?.unifiedWindows || {};
+    const usage = meter("5-hour limit", windows.five_hour) + meter("Weekly limit", windows.seven_day);
+    return `<button type="button" class="provider" style="--c: ${colour(p.id)}" data-id="${p.id}"
+        aria-pressed="${p.id === current}" ${p.ready ? "" : "disabled"}>
+      <span class="name">${esc(p.name)}</span>
+      <span class="vendor">${esc(p.vendor)} models${p.version ? `, CLI ${esc(p.version)}` : ""}</span>
+      <span class="state ${p.ready ? "ok" : "bad"}">${p.ready ? `Ready: ${esc(p.account || "logged in")}` : esc(p.problem || "Not available")}</span>
+      ${usage ? `<span class="usage">${usage}</span>` : ""}
+    </button>`;
+  }).join("");
+  document.querySelectorAll(".provider").forEach((b) => b.addEventListener("click", () => choose(b.dataset.id)));
+}
+
+function choose(id) {
+  const p = providerById(id);
+  if (!p || !p.ready) return;
+  current = id;
+  store.set("gateway-provider", id);
+  document.body.dataset.provider = id;
+  document.querySelectorAll(".provider").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.id === id)));
+  const savedApi = store.get(`gateway-api-${id}`, p.apis[0]);
+  $("#api").innerHTML = p.apis.map((a) => `<option value="${a}">${esc(apiLabels[a] || a)}</option>`).join("");
+  $("#api").value = p.apis.includes(savedApi) ? savedApi : p.apis[0];
+  const models = p.models.length ? p.models : [{ id: p.default_model, label: p.default_model }];
+  $("#model").innerHTML = models.map((m) => `<option value="${esc(m.id)}">${esc(m.label)}${m.label !== m.id ? ` (${esc(m.id)})` : ""}</option>`).join("");
+  const savedModel = store.get(`gateway-model-${id}`, p.default_model);
+  $("#model").value = models.some((m) => m.id === savedModel) ? savedModel : models[0].id;
+  $("#ask").textContent = `Ask ${p.name}`;
+  renderAttached();
+  updatePreview();
+}
+
+function draft() {
+  return {
+    model: $("#model").value,
+    maxTokens: Number($("#max-tokens").value) || 1024,
+    system: $("#system").value.trim(),
+    question: $("#question").value.trim() || "…",
+    context: $("#context").value.trim(),
+    files: attached.filter((f) => f.core),
+    tools: readTools(),
+  };
+}
+
+// Long data: URLs are shortened in the preview; the request itself carries them whole.
+const shorten = (key, value) => typeof value === "string" && value.startsWith("data:") && value.length > 120
+  ? `${value.slice(0, 48)}… (${value.length.toLocaleString()} characters)` : value;
+
+function updatePreview() {
+  const api = APIS[$("#api").value];
+  if (!api) return;
+  let d;
+  try { d = draft(); } catch (err) {
+    $("#tools-error").textContent = err.message;
+    $("#tools-error").hidden = false;
+    return;
+  }
+  $("#preview-endpoint").textContent = `POST ${location.origin}${api.url(d.model)}`;
+  $("#preview-body").textContent = JSON.stringify(api.body(d), shorten, 2);
+}
+
+["#question", "#context", "#system", "#max-tokens", "#model", "#tools"].forEach((s) => $(s).addEventListener("input", updatePreview));
+$("#api").addEventListener("change", (e) => { store.set(`gateway-api-${current}`, e.target.value); renderAttached(); updatePreview(); });
+$("#model").addEventListener("change", (e) => store.set(`gateway-model-${current}`, e.target.value));
+
+function renderConnect() {
+  $("#connect").innerHTML = `
+    <span>Anthropic SDK</span><span>base URL <code>${esc(location.origin)}</code></span>
+    <span>OpenAI SDK</span><span>base URL <code>${esc(location.origin)}/v1</code></span>
+    <span>Google GenAI SDK</span><span>base URL <code>${esc(location.origin)}</code></span>
+    <span>API key for all three</span><span><code>${esc(apiKey)}</code></span>`;
+}
+
+async function refreshStatus() {
+  try {
+    const s = await getJSON("/ui/api/status");
+    providers = s.providers;
+    apiLabels = Object.fromEntries(s.apis.map((a) => [a.id, a.label]));
+    renderProviders();
+    renderFilters(s.stats.per_provider || {});
+    if (!providerById(current)?.ready) current = providers.find((p) => p.ready)?.id || current;
+    if (!$("#api").options.length || document.body.dataset.provider !== current) choose(current);
+  } catch (err) {
+    $("#providers").innerHTML = `<p class="error">${esc(err.message)}</p>`;
+  }
+}
+
+// ---------- history ----------
+
+function renderFilters(counts) {
+  const all = Object.values(counts).reduce((a, b) => a + b, 0);
+  const options = [{ id: "", name: "All", n: all }, ...providers.map((p) => ({ id: p.id, name: p.name, n: counts[p.id] || 0 }))];
+  $("#filters").innerHTML = options.map((o) =>
+    `<button type="button" data-id="${o.id}" aria-pressed="${o.id === filter}" style="--c: ${o.id ? colour(o.id) : "transparent"}"><span>${esc(o.name)} ${o.n}</span></button>`).join("");
+  document.querySelectorAll("#filters button").forEach((b) => b.addEventListener("click", () => {
+    filter = b.dataset.id;
+    document.querySelectorAll("#filters button").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.id === filter)));
+    refreshHistory(true);
+  }));
+}
+
+function entryElement(item) {
+  const el = document.createElement("article");
+  el.className = "entry";
+  const p = providerById(item.provider);
+  el.style.setProperty("--c", colour(item.provider));
+  const tokens = item.input_tokens != null ? `${item.input_tokens.toLocaleString()} tokens in, ${(item.output_tokens ?? 0).toLocaleString()} out` : "";
+  const secs = item.latency_ms != null ? `${(item.latency_ms / 1000).toFixed(1)} s` : "";
+  el.innerHTML = `
+    <div class="q">
+      <p class="who">${esc(p ? p.name : item.provider)}</p>
+      <p class="q-text">${esc(item.question || "")}</p>
+      ${item.context ? `<details class="ctx"><summary>Context, ${item.context.length.toLocaleString()} characters</summary><p>${esc(item.context)}</p></details>` : ""}
+      ${item.attachments?.length ? `<p class="attach-list">Attached: ${item.attachments.map((a) => `${esc(a.name)} (${size(a.size)})`).join(", ")}</p>` : ""}
+      <div class="meta">
+        <span>${esc(apiLabels[item.api] || item.api)} format</span>
+        <span>${esc(item.model || "")}</span>
+        ${tokens ? `<span>${tokens}</span>` : ""}
+        ${item.cache === "hit" ? `<span class="cached">Saved answer, not asked again</span>` : secs ? `<span>${secs}${item.stream ? ", streamed" : ""}</span>` : ""}
+        <span>${item.source === "ui" ? "From this page" : "From your app"} at ${when(item.created_at)}</span>
+      </div>
+    </div>
+    <div class="a">
+      ${item.error ? `<p class="error">${esc(item.error)}</p>` : answerHTML(item.answer)}
+      <details class="raw"><summary>Show the API request and response</summary><div class="raw-body">Loading…</div></details>
+    </div>`;
+  const details = el.querySelector("details.raw");
+  details.addEventListener("toggle", async () => {
+    if (!details.open || details.dataset.loaded) return;
+    try {
+      const full = await getJSON(`/ui/api/history/${item.id}`);
+      details.querySelector(".raw-body").innerHTML = `
+        <h4>Response (HTTP ${full.status}), in the ${esc(apiLabels[full.api] || full.api)} format${full.stream ? ", shown as the full body a non-streaming call returns" : ""}</h4>
+        <pre class="json">${esc(JSON.stringify(full.response, null, 2))}</pre>
+        <h4>Request</h4>
+        <pre class="json">${esc(JSON.stringify(full.request, null, 2))}</pre>`;
+      details.dataset.loaded = "1";
+    } catch (err) {
+      details.querySelector(".raw-body").innerHTML = `<p class="error">${esc(err.message)}</p>`;
+    }
+  });
+  return el;
+}
+
+async function refreshHistory(reset = false) {
+  let added = 0;
+  const ledger = $("#ledger");
+  if (reset) { shown.clear(); ledger.innerHTML = ""; }
+  let items;
+  try { items = (await getJSON(`/ui/api/history?limit=100${filter ? `&provider=${filter}` : ""}`)).items; }
+  catch (err) { if (!shown.size) ledger.innerHTML = `<p class="empty">${esc(err.message)}</p>`; return 0; }
+  if (!items.length) {
+    if (!ledger.querySelector(".entry")) {
+      ledger.innerHTML = `<p class="empty">No questions yet. Ask one above, or point your app at <code>${esc(location.origin)}</code>.</p>`;
+    }
+    return 0;
+  }
+  ledger.querySelector(".empty")?.remove();
+  // History never changes, so only new items (newest first) are added on top.
+  const fresh = items.filter((i) => !shown.has(i.id)).reverse();
+  added = fresh.length;
+  for (const item of fresh) {
+    const el = entryElement(item);
+    shown.set(item.id, el);
+    const live = ledger.querySelector(".entry.live");
+    ledger.insertBefore(el, live ? live.nextSibling : ledger.firstChild);
+  }
+  return added;
+}
+
+// ---------- asking ----------
+
+function liveEntry(question, provider) {
+  const el = document.createElement("article");
+  el.className = "entry live";
+  el.style.setProperty("--c", colour(provider.id));
+  el.innerHTML = `<div class="q"><p class="who">${esc(provider.name)}</p><p class="q-text">${esc(question)}</p><div class="meta"><span>${esc(apiLabels[$("#api").value])} format, answering now</span></div></div>
+    <div class="a"><div class="prose"><span class="caret"></span></div></div>`;
+  $("#ledger").querySelector(".empty")?.remove();
+  $("#ledger").prepend(el);
+  return el;
+}
+
+$("#ask-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!$("#question").value.trim()) return;
+  const provider = providerById(current);
+  const apiId = $("#api").value;
+  const api = APIS[apiId];
+  let d;
+  try { d = draft(); } catch (err) {
+    $("#tools-error").textContent = err.message;
+    $("#tools-error").hidden = false;
+    $("#tools-box").open = true;
+    return;
+  }
+  if (attached.some((f) => !f.core)) {
+    alertFiles();
+    return;
+  }
+  const headers = { "content-type": "application/json", "x-gateway-source": "ui", ...api.headers() };
+  if (!$("#use-cache").checked) headers["cache-control"] = "no-cache";
+
+  const el = liveEntry(d.question, provider);
+  const answerEl = el.querySelector(".prose");
+  let text = "";
+  let failed = false;
+  const calls = [];
+  const show = (done) => {
+    answerEl.innerHTML = markdown(text) + calls.map((c) => toolBox(c.name, c.args)).join("")
+      + (done ? "" : '<span class="caret"></span>');
+  };
+  const fail = (message) => { failed = true; el.querySelector(".a").innerHTML = `<p class="error">${esc(message)}</p>`; };
+
+  controller = new AbortController();
+  $("#ask").disabled = true;
+  $("#ask").textContent = "Answering…";
+  $("#stop").hidden = false;
+  try {
+    const r = await fetch(api.url(d.model), { method: "POST", headers, body: JSON.stringify(api.body(d)), signal: controller.signal });
+    if (!r.ok) {
+      const err = await r.json().catch(() => null);
+      fail(err?.error?.message || `HTTP ${r.status}`);
+    } else {
+      const reader = r.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split(/\r?\n\r?\n/);
+        buffer = parts.pop();
+        for (const chunk of parts) {
+          const line = chunk.split(/\r?\n/).find((l) => l.startsWith("data: "));
+          if (!line || line === "data: [DONE]") continue;
+          const out = api.read(JSON.parse(line.slice(6))) || {};
+          if (out.text) { text += out.text; show(false); }
+          if (out.toolStart) { calls.push({ name: out.toolStart, args: "" }); show(false); }
+          if (out.toolArgs && calls.length) { calls[calls.length - 1].args += out.toolArgs; show(false); }
+          if (out.error) fail(out.error);
+        }
+      }
+      if (!failed) show(true);
+    }
+  } catch (err) {
+    fail(err.name === "AbortError" ? "Stopped before the answer finished." : err.message);
+  } finally {
+    $("#ask").disabled = false;
+    $("#ask").textContent = `Ask ${provider.name}`;
+    $("#stop").hidden = true;
+    // Swap the live entry for the stored one, which has the timing, tokens and API response.
+    // Requests the gateway rejected before running (a bad field) are not stored: keep those on screen.
+    if (await refreshHistory()) {
+      el.remove();
+    } else {
+      el.classList.remove("live");
+      el.querySelector(".meta").innerHTML = "<span>Not saved</span>";
+    }
+    controller = null;  // cleared last, so the background refresh cannot add the same entry twice
+    refreshStatus();
+  }
+});
+
+// Files that failed or are still uploading are not sent.
+function alertFiles() {
+  $("#files-box").open = true;
+  $("#files-error").textContent = `Remove or wait for these files first: ${attached.filter((f) => !f.core).map((f) => f.name).join(", ")}.`;
+  $("#files-error").hidden = false;
+}
+
+$("#stop").addEventListener("click", () => controller?.abort());
+$("#question").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) $("#ask-form").requestSubmit();
+});
+
+try { localStorage.removeItem("gateway-key"); } catch {}  // left over from the page's first version
+renderConnect();
+refreshStatus().then(() => refreshHistory());
+refreshFiles();
+// Requests from your apps show up here too.
+setInterval(() => { if (!document.hidden && !controller) refreshHistory(); }, 4000);
+</script>
+</body>
+</html>
