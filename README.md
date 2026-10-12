@@ -324,3 +324,7 @@ poc/app.py                      the first proof of concept, kept for reference
 
 Your Claude, ChatGPT and Google plans are for your own use. Use this gateway on your own computer while you build.
 Do not share it, expose it to other people, or serve real users through it. For production, use API keys.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
